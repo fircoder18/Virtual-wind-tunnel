@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual Wind Tunnel — Potential Flow Explorer</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050a06;
+    --panel: #090f0a;
+    --border: #1a3a1e;
+    --green: #00ff41;
+    --green-dim: #00c432;
+    --green-faint: #003310;
+    --green-glow: rgba(0,255,65,0.15);
+    --amber: #ffb300;
+    --red: #ff3b3b;
+    --cyan: #00e5ff;
+    --text: #a8ffb8;
+    --text-dim: #4a7a52;
+    --streamline: #00ff41;
+    --equipot: #00b8d4;
+    --stagnation: #ff3b3b;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-ui: 'Rajdhani', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* CRT vignette */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 9998;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    position: relative;
+  }
+
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green), transparent);
+    opacity: 0.4;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px; height: 36px;
+    border: 1px solid var(--green);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    clip-path: polygon(10% 0%, 90% 0%, 100% 10%, 100% 90%, 90% 100%, 10% 100%, 0% 90%, 0% 10%);
+    background: var(--green-faint);
+  }
+
+  .logo-icon svg { width: 20px; height: 20px; }
+
+  .logo-text h1 {
+    font-family: var(--font-ui);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    text-shadow: 0 0 20px var(--green);
+  }
+
+  .logo-text p {
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+  }
+
+  .header-status {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .status-item {
+    font-size: 10px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--green); }
+    50% { opacity: 0.4; box-shadow: none; }
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .app {
+    display: grid;
+    grid-template-columns: 300px 1fr 260px;
+    grid-template-rows: 1fr;
+    height: calc(100vh - 57px);
+  }
+
+  /* ── PANELS ── */
+  .panel {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+
+  .panel-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-header::before {
+    content: '//';
+    color: var(--green);
+    opacity: 0.6;
+  }
+
+  /* ── CONTROLS ── */
+  .control-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+  }
+
+  .flow-type-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .flow-btn {
+    padding: 8px 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+
+  .flow-btn:hover {
+    border-color: var(--green-dim);
+    color: var(--green-dim);
+    background: var(--green-faint);
+  }
+
+  .flow-btn.active {
+    border-color: var(--green);
+    color: var(--green);
+    background: var(--green-faint);
+    box-shadow: 0 0 8px var(--green-glow), inset 0 0 8px var(--green-glow);
+    text-shadow: 0 0 8px var(--green);
+  }
+
+  .param-row {
+    margin-bottom: 12px;
+  }
+
+  .param-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .param-label span {
+    color: var(--green);
+  }
+
+  input[type="range"] {
+    width: 100%;
+    -webkit-appearance: none;
+    height: 2px;
+    background: var(--border);
+    outline: none;
+    margin: 4px 0;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    background: var(--green);
+    cursor: pointer;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    box-shadow: 0 0 6px var(--green);
+  }
+
+  input[type="number"], input[type="text"] {
+    width: 100%;
+    background: var(--green-faint);
+    border: 1px solid var(--border);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 6px 8px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input[type="number"]:focus, input[type="text"]:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 8px var(--green-glow);
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--green-faint);
+    border: 1px solid var(--border);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 8px;
+    outline: none;
+    resize: vertical;
+    min-height: 60px;
+    line-height: 1.5;
+  }
+
+  textarea:focus { border-color: var(--green); }
+
+  .run-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--green-faint);
+    border: 1px solid var(--green);
+    color: var(--green);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .run-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(0,255,65,0.1), transparent);
+    transition: left 0.3s;
+  }
+
+  .run-btn:hover {
+    background: rgba(0,255,65,0.15);
+    box-shadow: 0 0 20px var(--green-glow);
+    text-shadow: 0 0 10px var(--green);
+  }
+
+  .run-btn:hover::before { left: 100%; }
+
+  .run-btn:active { transform: scale(0.98); }
+
+  /* ── CANVAS AREA ── */
+  .canvas-area {
+    position: relative;
+    background: #020805;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .canvas-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+
+  .canvas-info {
+    display: flex;
+    gap: 16px;
+    font-size: 9px;
+    color: var(--text-dim);
+  }
+
+  .canvas-info span { color: var(--green); }
+
+  .toggle-group {
+    display: flex;
+    gap: 6px;
+  }
+
+  .toggle-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 1px;
+  }
+
+  .toggle-btn.on {
+    border-color: var(--streamline);
+    color: var(--streamline);
+    background: rgba(0,255,65,0.05);
+  }
+
+  .toggle-btn.on.eq {
+    border-color: var(--equipot);
+    color: var(--equipot);
+    background: rgba(0,184,212,0.05);
+  }
+
+  .toggle-btn.on.vel {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: rgba(255,179,0,0.05);
+  }
+
+  canvas {
+    flex: 1;
+    display: block;
+  }
+
+  .canvas-crosshair {
+    position: absolute;
+    bottom: 10px;
+    left: 16px;
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+
+  .canvas-crosshair span { color: var(--green); }
+
+  /* ── METRICS PANEL ── */
+  .metric-card {
+    margin: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    background: rgba(0,20,5,0.5);
+    position: relative;
+  }
+
+  .metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: var(--green);
+    opacity: 0.6;
+  }
+
+  .metric-card.cyan::before { background: var(--cyan); }
+  .metric-card.amber::before { background: var(--amber); }
+  .metric-card.red::before { background: var(--red); }
+
+  .metric-label {
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .metric-value {
+    font-size: 22px;
+    color: var(--green);
+    text-shadow: 0 0 10px var(--green);
+    line-height: 1;
+  }
+
+  .metric-card.cyan .metric-value { color: var(--cyan); text-shadow: 0 0 10px var(--cyan); }
+  .metric-card.amber .metric-value { color: var(--amber); text-shadow: 0 0 10px var(--amber); }
+  .metric-card.red .metric-value { color: var(--red); text-shadow: 0 0 10px var(--red); }
+
+  .metric-unit {
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .equation-display {
+    margin: 0 12px 12px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    background: rgba(0,10,3,0.8);
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+
+  .eq-line { display: flex; justify-content: space-between; }
+  .eq-name { color: var(--text-dim); }
+  .eq-val { color: var(--green); }
+
+  .stagnation-list {
+    margin: 0 12px 12px;
+    font-size: 9px;
+    color: var(--text-dim);
+  }
+
+  .stagnation-point {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--green-faint);
+  }
+
+  .stagnation-point span { color: var(--red); }
+
+  /* ── LEGEND ── */
+  .legend {
+    margin: 0 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 9px;
+    color: var(--text-dim);
+  }
+
+  .legend-line {
+    width: 24px; height: 2px;
+  }
+
+  /* ── FORMULA BOX ── */
+  .formula-box {
+    margin: 0 12px 12px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    font-size: 9px;
+    line-height: 1.8;
+    color: var(--text-dim);
+    background: rgba(0,5,2,0.9);
+  }
+
+  .formula-box .f { color: var(--green); font-size: 11px; }
+
+  /* ── ANIMATIONS ── */
+  @keyframes flicker {
+    0%, 95%, 100% { opacity: 1; }
+    97% { opacity: 0.85; }
+  }
+
+  .canvas-area { animation: flicker 8s infinite; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .separator {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 0;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 9px;
+    color: var(--text-dim);
+    cursor: pointer;
+    margin-bottom: 6px;
+  }
+
+  .checkbox-row input { accent-color: var(--green); width: 12px; height: 12px; }
+  .checkbox-row:hover { color: var(--green); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#00ff41" stroke-width="1.5">
+        <path d="M3 12 Q8 6 12 12 Q16 18 21 12"/>
+        <path d="M3 8 Q8 2 12 8 Q16 14 21 8" opacity="0.4"/>
+        <path d="M3 16 Q8 10 12 16 Q16 22 21 16" opacity="0.4"/>
+      </svg>
+    </div>
+    <div class="logo-text">
+      <h1>VWT — Virtual Wind Tunnel</h1>
+      <p>Potential Flow Explorer · Cauchy-Riemann Visualization System · v2.0</p>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="status-item"><div class="status-dot"></div>SOLVER READY</div>
+    <div class="status-item" id="fps-counter">FPS: --</div>
+    <div class="status-item">POTENTIAL FLOW · IRROTATIONAL · INCOMPRESSIBLE</div>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- ── LEFT PANEL: CONTROLS ── -->
+  <div class="panel">
+    <div class="panel-header">Flow Configuration</div>
+
+    <div class="control-section">
+      <div class="section-label">Flow Type Preset</div>
+      <div class="flow-type-grid">
+        <button class="flow-btn active" onclick="setFlowType('uniform')">UNIFORM<br>FLOW</button>
+        <button class="flow-btn" onclick="setFlowType('source')">SOURCE /<br>SINK</button>
+        <button class="flow-btn" onclick="setFlowType('doublet')">DOUBLET</button>
+        <button class="flow-btn" onclick="setFlowType('vortex')">FREE<br>VORTEX</button>
+        <button class="flow-btn" onclick="setFlowType('rankine')">RANKINE<br>OVAL</button>
+        <button class="flow-btn" onclick="setFlowType('cylinder')">CYLINDER<br>+ VORTEX</button>
+        <button class="flow-btn" onclick="setFlowType('doublet_uniform')">FLOW PAST<br>CYLINDER</button>
+        <button class="flow-btn" onclick="setFlowType('custom')">CUSTOM<br>ψ(x,y)</button>
+      </div>
+    </div>
+
+    <div class="control-section" id="param-section">
+      <div class="section-label">Parameters</div>
+
+      <div class="param-row" id="param-U">
+        <div class="param-label">Free-Stream Velocity U∞ <span id="val-U">1.0</span> m/s</div>
+        <input type="range" min="0.1" max="5" step="0.1" value="1.0" oninput="updateParam('U', this.value)">
+      </div>
+
+      <div class="param-row" id="param-m" style="display:none">
+        <div class="param-label">Source Strength m <span id="val-m">2.0</span></div>
+        <input type="range" min="-8" max="8" step="0.5" value="2.0" oninput="updateParam('m', this.value)">
+      </div>
+
+      <div class="param-row" id="param-kappa" style="display:none">
+        <div class="param-label">Doublet Strength κ <span id="val-kappa">2.0</span></div>
+        <input type="range" min="0.5" max="8" step="0.5" value="2.0" oninput="updateParam('kappa', this.value)">
+      </div>
+
+      <div class="param-row" id="param-Gamma">
+        <div class="param-label">Circulation Γ <span id="val-Gamma">0.0</span></div>
+        <input type="range" min="-10" max="10" step="0.5" value="0.0" oninput="updateParam('Gamma', this.value)">
+      </div>
+
+      <div class="param-row" id="param-a" style="display:none">
+        <div class="param-label">Body Radius a <span id="val-a">1.0</span></div>
+        <input type="range" min="0.2" max="2" step="0.1" value="1.0" oninput="updateParam('a', this.value)">
+      </div>
+
+      <div class="param-row" id="param-custom" style="display:none">
+        <div class="param-label">Stream Function ψ(x,y)</div>
+        <textarea id="custom-psi" placeholder="e.g. U*y + m/(2*PI)*Math.atan2(y,x)">U*y</textarea>
+        <div class="param-label" style="margin-top:6px">Variables: x, y, U, m, Gamma</div>
+      </div>
+
+      <div class="param-row">
+        <div class="param-label">Stream Lines Count <span id="val-nlines">20</span></div>
+        <input type="range" min="5" max="60" step="1" value="20" oninput="updateParam('nlines', this.value)">
+      </div>
+
+      <div class="param-row">
+        <div class="param-label">Resolution <span id="val-res">200</span>px</div>
+        <input type="range" min="80" max="400" step="20" value="200" oninput="updateParam('res', this.value)">
+      </div>
+    </div>
+
+    <div class="control-section">
+      <div class="section-label">Display Options</div>
+      <label class="checkbox-row"><input type="checkbox" id="show-velocity" checked> Show Velocity Vectors</label>
+      <label class="checkbox-row"><input type="checkbox" id="show-pressure" checked> Show Pressure Colormap</label>
+      <label class="checkbox-row"><input type="checkbox" id="show-stagnation" checked> Mark Stagnation Points</label>
+      <label class="checkbox-row"><input type="checkbox" id="show-body"> Show Body Outline</label>
+    </div>
+
+    <div class="control-section">
+      <button class="run-btn" onclick="compute()">▶ RUN SIMULATION</button>
+    </div>
+
+  </div>
+
+  <!-- ── CENTER: CANVAS ── -->
+  <div class="canvas-area">
+    <div class="canvas-toolbar">
+      <div class="canvas-info">
+        DOMAIN: <span>[-4, 4] × [-4, 4]</span> &nbsp;|&nbsp;
+        GRID: <span id="grid-info">200×200</span> &nbsp;|&nbsp;
+        FLOW: <span id="flow-info">UNIFORM</span>
+      </div>
+      <div class="toggle-group">
+        <button class="toggle-btn on" id="t-stream" onclick="toggleLayer('stream')">ψ STREAMLINES</button>
+        <button class="toggle-btn on eq" id="t-equip" onclick="toggleLayer('equip')">φ EQUIPOTENTIAL</button>
+        <button class="toggle-btn on vel" id="t-vel" onclick="toggleLayer('vel')">∇φ VELOCITY</button>
+      </div>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div class="canvas-crosshair" id="cursor-pos">CURSOR: <span>x=0.000, y=0.000</span> · ψ=<span id="psi-cursor">0.000</span> · |V|=<span id="vel-cursor">0.000</span></div>
+  </div>
+
+  <!-- ── RIGHT PANEL: METRICS ── -->
+  <div class="panel">
+    <div class="panel-header">Aerodynamic Metrics</div>
+
+    <div class="metric-card">
+      <div class="metric-label">Circulation Γ</div>
+      <div class="metric-value" id="m-gamma">0.000</div>
+      <div class="metric-unit">m²/s · (line integral ∮V·ds)</div>
+    </div>
+
+    <div class="metric-card cyan">
+      <div class="metric-label">Lift per Unit Span L'</div>
+      <div class="metric-value" id="m-lift">0.000</div>
+      <div class="metric-unit">N/m · (Kutta-Joukowski: L'= ρU∞Γ)</div>
+    </div>
+
+    <div class="metric-card amber">
+      <div class="metric-label">Max Velocity |V|max</div>
+      <div class="metric-value" id="m-vmax">0.000</div>
+      <div class="metric-unit">m/s</div>
+    </div>
+
+    <div class="metric-card red">
+      <div class="metric-label">Min Pressure Cp</div>
+      <div class="metric-value" id="m-cpmin">0.000</div>
+      <div class="metric-unit">Cp = 1 − (V/V∞)²</div>
+    </div>
+
+    <div class="separator"></div>
+
+    <div class="equation-display">
+      <div class="eq-line"><span class="eq-name">∂ψ/∂y = u =</span> <span class="eq-val" id="eq-u">—</span></div>
+      <div class="eq-line"><span class="eq-name">−∂ψ/∂x = v =</span> <span class="eq-val" id="eq-v">—</span></div>
+      <div class="eq-line"><span class="eq-name">φ + iψ = w(z)</span> <span class="eq-val">Complex Potential</span></div>
+      <div class="eq-line"><span class="eq-name">∇²ψ = 0</span> <span class="eq-val">Laplace Eq.</span></div>
+      <div class="eq-line"><span class="eq-name">∇²φ = 0</span> <span class="eq-val">Irrotational</span></div>
+    </div>
+
+    <div class="panel-header">Stagnation Points</div>
+    <div class="stagnation-list" id="stag-list">
+      <div class="stagnation-point"><span>Run simulation</span></div>
+    </div>
+
+    <div class="panel-header">Legend</div>
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-line" style="background: var(--streamline);"></div>
+        Streamlines ψ = const
+      </div>
+      <div class="legend-item">
+        <div class="legend-line" style="background: var(--equipot); height:1px; border-top:1px dashed var(--equipot);"></div>
+        Equipotential φ = const
+      </div>
+      <div class="legend-item">
+        <div class="legend-line" style="background: var(--amber);"></div>
+        Velocity vectors ∇φ
+      </div>
+      <div class="legend-item">
+        <div class="legend-line" style="background: var(--red); height:2px;"></div>
+        Stagnation points |V|→0
+      </div>
+    </div>
+
+    <div class="panel-header">Cauchy-Riemann</div>
+    <div class="formula-box">
+      <div>∂φ/∂x = ∂ψ/∂y = u</div>
+      <div>∂φ/∂y = −∂ψ/∂x = v</div>
+      <div style="margin-top:6px; color:#4a7a52">ψ ⊥ φ everywhere</div>
+      <div style="color:#4a7a52">Streamlines ⊥ Equipotentials</div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+// ── STATE ──
+const state = {
+  flowType: 'uniform',
+  U: 1.0, m: 2.0, kappa: 2.0, Gamma: 0.0, a: 1.0,
+  nlines: 20, res: 200,
+  layers: { stream: true, equip: true, vel: true },
+  rho: 1.225,
+  customPsi: 'U*y',
+  domain: 4.0
+};
+
+const PI = Math.PI;
+
+// ── STREAM FUNCTIONS ──
+const flowDefs = {
+  uniform: {
+    psi:  (x,y) => state.U * y,
+    phi:  (x,y) => state.U * x,
+    u:    (x,y) => state.U,
+    v:    (x,y) => 0,
+    label: 'UNIFORM FLOW',
+    params: ['U', 'Gamma']
+  },
+  source: {
+    psi:  (x,y) => state.m / (2*PI) * Math.atan2(y, x),
+    phi:  (x,y) => state.m / (2*PI) * 0.5 * Math.log(x*x + y*y + 1e-10),
+    u:    (x,y) => { const r2 = x*x+y*y+1e-10; return state.m/(2*PI)*x/r2; },
+    v:    (x,y) => { const r2 = x*x+y*y+1e-10; return state.m/(2*PI)*y/r2; },
+    label: 'SOURCE / SINK',
+    params: ['m']
+  },
+  doublet: {
+    psi:  (x,y) => { const r2=x*x+y*y+1e-10; return -state.kappa/(2*PI)*y/r2; },
+    phi:  (x,y) => { const r2=x*x+y*y+1e-10; return  state.kappa/(2*PI)*x/r2; },
+    u:    (x,y) => { const r2=x*x+y*y+1e-10; return state.kappa/(2*PI)*(y*y-x*x)/(r2*r2); },
+    v:    (x,y) => { const r2=x*x+y*y+1e-10; return -state.kappa/(2*PI)*(2*x*y)/(r2*r2); },
+    label: 'DOUBLET',
+    params: ['kappa']
+  },
+  vortex: {
+    psi:  (x,y) => -state.Gamma/(2*PI)*0.5*Math.log(x*x+y*y+1e-10),
+    phi:  (x,y) =>  state.Gamma/(2*PI)*Math.atan2(y,x),
+    u:    (x,y) => { const r2=x*x+y*y+1e-10; return  state.Gamma/(2*PI)*y/r2; },
+    v:    (x,y) => { const r2=x*x+y*y+1e-10; return -state.Gamma/(2*PI)*x/r2; },
+    label: 'FREE VORTEX',
+    params: ['Gamma']
+  },
+  rankine: {
+    psi:  (x,y) => state.U*y + state.m/(2*PI)*(Math.atan2(y,x+1)-Math.atan2(y,x-1)),
+    phi:  (x,y) => state.U*x + state.m/(4*PI)*Math.log(((x+1)*(x+1)+y*y)/((x-1)*(x-1)+y*y+1e-10)),
+    u:    (x,y) => { const r1=(x+1)*(x+1)+y*y+1e-10,r2=(x-1)*(x-1)+y*y+1e-10; return state.U+state.m/(2*PI)*((x+1)/r1-(x-1)/r2); },
+    v:    (x,y) => { const r1=(x+1)*(x+1)+y*y+1e-10,r2=(x-1)*(x-1)+y*y+1e-10; return state.m/(2*PI)*(y/r1-y/r2); },
+    label: 'RANKINE OVAL',
+    params: ['U','m']
+  },
+  cylinder: {
+    psi:  (x,y) => { const r2=x*x+y*y+1e-10,a2=state.a*state.a; return state.U*(1-a2/r2)*y - state.Gamma/(4*PI)*Math.log(r2); },
+    phi:  (x,y) => { const r2=x*x+y*y+1e-10,a2=state.a*state.a; return state.U*(1+a2/r2)*x + state.Gamma/(2*PI)*Math.atan2(y,x); },
+    u:    (x,y) => { const r2=x*x+y*y+1e-10,a2=state.a*state.a; return state.U*(1-a2*(y*y-x*x)/(r2*r2))+state.Gamma/(2*PI)*y/r2; },
+    v:    (x,y) => { const r2=x*x+y*y+1e-10,a2=state.a*state.a; return -state.U*a2*(2*x*y)/(r2*r2)-state.Gamma/(2*PI)*x/r2; },
+    label: 'CYLINDER + VORTEX',
+    params: ['U','Gamma','a']
+  },
+  doublet_uniform: {
+    psi:  (x,y) => { const r2=x*x+y*y+1e-10,a2=state.a*state.a; return state.U*(1-a2/r2)*y; },
+    phi:  (x,y) => { const r2=x*x+y*y+1e-10,a2=state.a*state.a; return state.U*(1+a2/r2)*x; },
+    u:    (x,y) => { const r2=x*x+y*y+1e-10,a2=state.a*state.a; return state.U*(1-a2*(y*y-x*x)/(r2*r2)); },
+    v:    (x,y) => { const r2=x*x+y*y+1e-10,a2=state.a*state.a; return -state.U*a2*(2*x*y)/(r2*r2); },
+    label: 'FLOW PAST CYLINDER',
+    params: ['U','a']
+  },
+  custom: {
+    psi:  null, phi: null, u: null, v: null,
+    label: 'CUSTOM ψ(x,y)',
+    params: ['U','m','Gamma','custom']
+  }
+};
+
+// ── SETUP ──
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  const area = canvas.parentElement;
+  W = canvas.width  = area.clientWidth;
+  H = canvas.height = area.clientHeight - canvas.previousElementSibling.offsetHeight;
+}
+window.addEventListener('resize', () => { resize(); compute(); });
+
+// ── COORD TRANSFORMS ──
+function toCanvas(x, y) {
+  const cx = W/2 + x * (W / (2*state.domain));
+  const cy = H/2 - y * (H / (2*state.domain));
+  return [cx, cy];
+}
+
+function toWorld(cx, cy) {
+  const x = (cx - W/2) / (W / (2*state.domain));
+  const y = -(cy - H/2) / (H / (2*state.domain));
+  return [x, y];
+}
+
+// ── FLOW EVALUATION ──
+function getFlow() {
+  if (state.flowType === 'custom') {
+    try {
+      const fnStr = document.getElementById('custom-psi').value;
+      const U=state.U, m=state.m, Gamma=state.Gamma, a=state.a;
+      const psiFunc = new Function('x','y','U','m','Gamma','a','PI', `return ${fnStr};`);
+      const h = 0.001;
+      return {
+        psi:  (x,y) => psiFunc(x,y,U,m,Gamma,a,PI),
+        phi:  (x,y) => 0,
+        u:    (x,y) => (psiFunc(x,y+h,U,m,Gamma,a,PI)-psiFunc(x,y-h,U,m,Gamma,a,PI))/(2*h),
+        v:    (x,y) => -(psiFunc(x+h,y,U,m,Gamma,a,PI)-psiFunc(x-h,y,U,m,Gamma,a,PI))/(2*h),
+        label: 'CUSTOM'
+      };
+    } catch(e) { return flowDefs.uniform; }
+  }
+  return flowDefs[state.flowType];
+}
+
+// ── COMPUTE PSI GRID ──
+function computeGrid(flow, N) {
+  const grid = new Float32Array(N*N);
+  const phiGrid = new Float32Array(N*N);
+  const uGrid = new Float32Array(N*N);
+  const vGrid = new Float32Array(N*N);
+  const d = state.domain;
+  for (let j=0; j<N; j++) {
+    for (let i=0; i<N; i++) {
+      const x = -d + 2*d*i/(N-1);
+      const y = -d + 2*d*j/(N-1);
+      grid[j*N+i] = flow.psi(x,y);
+      if (flow.phi) phiGrid[j*N+i] = flow.phi(x,y);
+      uGrid[j*N+i] = flow.u(x,y);
+      vGrid[j*N+i] = flow.v(x,y);
+    }
+  }
+  return { grid, phiGrid, uGrid, vGrid };
+}
+
+// ── PRESSURE COLORMAP ──
+function pressureColor(cp) {
+  // Map Cp from [-3,1] to [0,1]
+  const t = Math.max(0, Math.min(1, (cp + 3) / 4));
+  // Blue (low pressure) → Green → Red (high)
+  if (t < 0.5) {
+    const s = t * 2;
+    return [Math.round(0*s), Math.round(255*s), Math.round(255*(1-s))];
+  } else {
+    const s = (t-0.5)*2;
+    return [Math.round(255*s), Math.round(255*(1-s)), 0];
+  }
+}
+
+// ── CONTOUR DRAWING (Marching Squares) ──
+function drawContour(grid, N, level, color, dashed) {
+  const d = state.domain;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = dashed ? 0.8 : 1.0;
+  if (dashed) ctx.setLineDash([4,4]);
+  else ctx.setLineDash([]);
+  ctx.beginPath();
+  for (let j=0; j<N-1; j++) {
+    for (let i=0; i<N-1; i++) {
+      const v00 = grid[j*N+i];
+      const v10 = grid[j*N+i+1];
+      const v01 = grid[(j+1)*N+i];
+      const v11 = grid[(j+1)*N+i+1];
+      const pts = [];
+      function interp(va, vb, xa, ya, xb, yb) {
+        const t = (level-va)/(vb-va);
+        return [xa + t*(xb-xa), ya + t*(yb-ya)];
+      }
+      const x0=-d+2*d*i/(N-1), x1=-d+2*d*(i+1)/(N-1);
+      const y0=-d+2*d*j/(N-1), y1=-d+2*d*(j+1)/(N-1);
+      if ((v00-level)*(v10-level)<0) pts.push(interp(v00,v10,x0,y0,x1,y0));
+      if ((v10-level)*(v11-level)<0) pts.push(interp(v10,v11,x1,y0,x1,y1));
+      if ((v01-level)*(v11-level)<0) pts.push(interp(v01,v11,x0,y1,x1,y1));
+      if ((v00-level)*(v01-level)<0) pts.push(interp(v00,v01,x0,y0,x0,y1));
+      if (pts.length === 2) {
+        const [ax,ay] = toCanvas(pts[0][0], pts[0][1]);
+        const [bx,by] = toCanvas(pts[1][0], pts[1][1]);
+        ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+      }
+    }
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ── VELOCITY VECTORS ──
+function drawVelocityField(flow, spacing) {
+  const d = state.domain;
+  const nx = Math.floor(W / spacing);
+  const ny = Math.floor(H / spacing);
+  for (let i=0; i<=nx; i++) {
+    for (let j=0; j<=ny; j++) {
+      const cx = (i+0.5) * spacing;
+      const cy = (j+0.5) * spacing;
+      const [wx, wy] = toWorld(cx, cy);
+      let u = flow.u(wx, wy);
+      let v = flow.v(wx, wy);
+      const mag = Math.sqrt(u*u+v*v);
+      if (mag < 1e-6 || mag > 20) continue;
+      const scale = Math.min(spacing*0.4/mag, spacing*0.4);
+      u *= scale; v *= -scale;
+      const alpha = Math.min(1, mag/3);
+      ctx.strokeStyle = `rgba(255,179,0,${alpha*0.7})`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(cx - u*0.5, cy - v*0.5);
+      ctx.lineTo(cx + u*0.5, cy + v*0.5);
+      ctx.stroke();
+      // arrowhead
+      const angle = Math.atan2(v, u);
+      const al = 4;
+      ctx.beginPath();
+      ctx.moveTo(cx+u*0.5, cy+v*0.5);
+      ctx.lineTo(cx+u*0.5 - al*Math.cos(angle-0.4), cy+v*0.5 - al*Math.sin(angle-0.4));
+      ctx.lineTo(cx+u*0.5 - al*Math.cos(angle+0.4), cy+v*0.5 - al*Math.sin(angle+0.4));
+      ctx.closePath();
+      ctx.fillStyle = `rgba(255,179,0,${alpha*0.7})`;
+      ctx.fill();
+    }
+  }
+}
+
+// ── PRESSURE BACKGROUND ──
+function drawPressureField(flow, step) {
+  const d = state.domain;
+  const Vinf = state.U || 1;
+  for (let cy=0; cy<H; cy+=step) {
+    for (let cx=0; cx<W; cx+=step) {
+      const [wx,wy] = toWorld(cx+step/2, cy+step/2);
+      const u = flow.u(wx,wy), v = flow.v(wx,wy);
+      const V2 = u*u+v*v;
+      const Cp = 1 - V2/(Vinf*Vinf);
+      const [r,g,b] = pressureColor(Cp);
+      ctx.fillStyle = `rgba(${r},${g},${b},0.18)`;
+      ctx.fillRect(cx, cy, step, step);
+    }
+  }
+}
+
+// ── BODY OUTLINE ──
+function drawBody() {
+  if (!document.getElementById('show-body').checked) return;
+  const a = state.a;
+  if (['cylinder','doublet_uniform'].includes(state.flowType)) {
+    const [cx,cy] = toCanvas(0,0);
+    const r = a * (W/(2*state.domain));
+    ctx.beginPath();
+    ctx.arc(cx,cy,r,0,2*PI);
+    ctx.strokeStyle = 'rgba(0,255,65,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3,3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(0,255,65,0.04)';
+    ctx.fill();
+  }
+}
+
+// ── STAGNATION POINT DETECTION ──
+function findStagnationPoints(flow, N) {
+  const d = state.domain;
+  const pts = [];
+  const h = 2*d/(N-1);
+  for (let j=1; j<N-1; j++) {
+    for (let i=1; i<N-1; i++) {
+      const x = -d+2*d*i/(N-1);
+      const y = -d+2*d*j/(N-1);
+      const u = flow.u(x,y), v = flow.v(x,y);
+      const mag = Math.sqrt(u*u+v*v);
+      if (mag < 0.05 * state.U) {
+        // check neighbours to avoid duplicates
+        let tooClose = false;
+        for (const p of pts) {
+          if (Math.hypot(x-p[0],y-p[1]) < h*3) { tooClose=true; break; }
+        }
+        if (!tooClose) pts.push([x, y, mag]);
+      }
+    }
+  }
+  return pts;
+}
+
+// ── COMPUTE CIRCULATION ──
+function computeCirculation(flow) {
+  const n = 500;
+  const R = state.a || 2.0;
+  let gamma = 0;
+  for (let i=0; i<n; i++) {
+    const theta1 = 2*PI*i/n;
+    const theta2 = 2*PI*(i+1)/n;
+    const xm = R*Math.cos((theta1+theta2)/2);
+    const ym = R*Math.sin((theta1+theta2)/2);
+    const dx = R*Math.cos(theta2)-R*Math.cos(theta1);
+    const dy = R*Math.sin(theta2)-R*Math.sin(theta1);
+    gamma += flow.u(xm,ym)*dx + flow.v(xm,ym)*dy;
+  }
+  return gamma;
+}
+
+// ── MAIN COMPUTE ──
+function compute() {
+  resize();
+  const N = state.res;
+  const flow = getFlow();
+  document.getElementById('grid-info').textContent = `${N}×${N}`;
+  document.getElementById('flow-info').textContent = flow.label;
+
+  const { grid, phiGrid, uGrid, vGrid } = computeGrid(flow, N);
+
+  // range
+  let psiMin=Infinity, psiMax=-Infinity;
+  let phiMin=Infinity, phiMax=-Infinity;
+  let uMax=0;
+  for (let i=0; i<N*N; i++) {
+    if (isFinite(grid[i])) { psiMin=Math.min(psiMin,grid[i]); psiMax=Math.max(psiMax,grid[i]); }
+    if (isFinite(phiGrid[i])) { phiMin=Math.min(phiMin,phiGrid[i]); phiMax=Math.max(phiMax,phiGrid[i]); }
+    const spd = Math.sqrt(uGrid[i]*uGrid[i]+vGrid[i]*vGrid[i]);
+    if (isFinite(spd)) uMax=Math.max(uMax,spd);
+  }
+
+  // clamp extremes
+  const psiRange = psiMax-psiMin;
+  const psiStep = psiRange / (state.nlines+1);
+  const phiRange = phiMax-phiMin;
+  const phiStep = phiRange / (state.nlines+1);
+
+  // ── DRAW ──
+  ctx.clearRect(0,0,W,H);
+
+  // grid
+  ctx.strokeStyle = 'rgba(0,80,20,0.15)';
+  ctx.lineWidth = 0.5;
+  for (let i=0; i<=8; i++) {
+    const x = i/8*W;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+  }
+  for (let j=0; j<=8; j++) {
+    const y = j/8*H;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+
+  // axes
+  const [ox,oy] = toCanvas(0,0);
+  ctx.strokeStyle = 'rgba(0,255,65,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(ox,0); ctx.lineTo(ox,H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,oy); ctx.lineTo(W,oy); ctx.stroke();
+
+  // pressure
+  if (document.getElementById('show-pressure').checked) {
+    drawPressureField(flow, Math.max(4, Math.floor(W/120)));
+  }
+
+  // body
+  drawBody();
+
+  // equipotential
+  if (state.layers.equip && flow.phi) {
+    for (let i=1; i<=state.nlines; i++) {
+      const lvl = phiMin + i*phiStep;
+      drawContour(phiGrid, N, lvl, 'rgba(0,184,212,0.5)', true);
+    }
+  }
+
+  // streamlines
+  if (state.layers.stream) {
+    for (let i=1; i<=state.nlines; i++) {
+      const lvl = psiMin + i*psiStep;
+      const alpha = 0.6 + 0.4*Math.abs(i/state.nlines - 0.5) * 2;
+      drawContour(grid, N, lvl, `rgba(0,255,65,${alpha*0.8})`, false);
+    }
+  }
+
+  // velocity
+  if (state.layers.vel) {
+    drawVelocityField(flow, 40);
+  }
+
+  // stagnation points
+  if (document.getElementById('show-stagnation').checked) {
+    const stags = findStagnationPoints(flow, N);
+    const stagList = document.getElementById('stag-list');
+    stagList.innerHTML = '';
+    stags.forEach(([sx,sy,mag]) => {
+      const [cx,cy] = toCanvas(sx,sy);
+      ctx.beginPath();
+      ctx.arc(cx,cy,6,0,2*PI);
+      ctx.strokeStyle = '#ff3b3b';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx-10,cy); ctx.lineTo(cx+10,cy);
+      ctx.moveTo(cx,cy-10); ctx.lineTo(cx,cy+10);
+      ctx.strokeStyle = 'rgba(255,59,59,0.5)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      const div = document.createElement('div');
+      div.className = 'stagnation-point';
+      div.innerHTML = `<span>(${sx.toFixed(2)}, ${sy.toFixed(2)})</span><span>|V|=${mag.toFixed(3)}</span>`;
+      stagList.appendChild(div);
+    });
+    if (stags.length===0) {
+      stagList.innerHTML = '<div class="stagnation-point"><span>None detected</span></div>';
+    }
+  }
+
+  // ── METRICS ──
+  const Gamma = computeCirculation(flow);
+  const lift = state.rho * state.U * Gamma;
+  const Vinf = state.U || 1;
+  const CpMin = 1 - (uMax*uMax)/(Vinf*Vinf);
+
+  document.getElementById('m-gamma').textContent = Gamma.toFixed(3);
+  document.getElementById('m-lift').textContent = lift.toFixed(3);
+  document.getElementById('m-vmax').textContent = Math.min(uMax,99).toFixed(3);
+  document.getElementById('m-cpmin').textContent = Math.max(-20,CpMin).toFixed(3);
+  document.getElementById('eq-u').textContent = `∂ψ/∂y`;
+  document.getElementById('eq-v').textContent = `-∂ψ/∂x`;
+
+  // label axes
+  ctx.fillStyle = 'rgba(0,255,65,0.5)';
+  ctx.font = '10px Share Tech Mono';
+  ctx.fillText('x →', W-30, oy-6);
+  ctx.fillText('↑ y', ox+6, 14);
+
+  // domain tick labels
+  ctx.fillStyle = 'rgba(0,100,20,0.7)';
+  ctx.font = '9px Share Tech Mono';
+  for (let v=-3; v<=3; v+=1) {
+    if (v===0) continue;
+    const [tx,] = toCanvas(v,0);
+    const [,ty] = toCanvas(0,v);
+    ctx.fillText(v, tx-4, oy+14);
+    ctx.fillText(v, ox+4, ty+4);
+  }
+}
+
+// ── PARAM UPDATES ──
+function updateParam(name, value) {
+  state[name] = parseFloat(value);
+  document.getElementById('val-'+name).textContent = parseFloat(value).toFixed(1);
+  compute();
+}
+
+function setFlowType(type) {
+  state.flowType = type;
+  document.querySelectorAll('.flow-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  // show/hide params
+  const allParams = ['U','m','kappa','Gamma','a','custom'];
+  allParams.forEach(p => {
+    const el = document.getElementById('param-'+p);
+    if (el) el.style.display = 'none';
+  });
+  const def = flowDefs[type];
+  if (def) {
+    def.params.forEach(p => {
+      const el = document.getElementById('param-'+p);
+      if (el) el.style.display = 'block';
+    });
+  }
+  // vortex default
+  if (type === 'vortex' && state.Gamma === 0) {
+    state.Gamma = 3.0;
+    document.getElementById('val-Gamma').textContent = '3.0';
+  }
+  compute();
+}
+
+function toggleLayer(name) {
+  state.layers[name] = !state.layers[name];
+  const btn = document.getElementById('t-'+name);
+  btn.classList.toggle('on');
+  compute();
+}
+
+// ── CURSOR TRACKING ──
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  const [wx,wy] = toWorld(cx,cy);
+  const flow = getFlow();
+  const psi = flow.psi(wx,wy);
+  const u = flow.u(wx,wy), v = flow.v(wx,wy);
+  const spd = Math.sqrt(u*u+v*v);
+  document.querySelector('#cursor-pos span').textContent = `x=${wx.toFixed(3)}, y=${wy.toFixed(3)}`;
+  document.getElementById('psi-cursor').textContent = isFinite(psi) ? psi.toFixed(3) : 'inf';
+  document.getElementById('vel-cursor').textContent = isFinite(spd) ? spd.toFixed(3) : 'inf';
+});
+
+// ── INIT ──
+resize();
+
+// default show only relevant params
+document.getElementById('param-m').style.display = 'none';
+document.getElementById('param-kappa').style.display = 'none';
+document.getElementById('param-a').style.display = 'none';
+document.getElementById('param-custom').style.display = 'none';
+
+compute();
+
+// FPS
+let last = performance.now();
+function fpsLoop() {
+  const now = performance.now();
+  const fps = Math.round(1000/(now-last));
+  last = now;
+  document.getElementById('fps-counter').textContent = `FPS: ${fps}`;
+  requestAnimationFrame(fpsLoop);
+}
+fpsLoop();
+</script>
+</body>
+</html>
